@@ -41,7 +41,8 @@ from concurrent.futures import ThreadPoolExecutor
 
 class RecordMatcher():
 
-    def __init__(self, name, fields, universe_file = None, field_rename_map = {}, fuzzy_thresh = 0.75, field_weights = None, exact = []):
+    def __init__(self, name, fields, universe_file = None, field_rename_map = {},
+                 build_meta = False, fuzzy_thresh = 0.75, field_weights = None, exact = []):
 
         self.name = name
         
@@ -62,9 +63,8 @@ class RecordMatcher():
         if(universe_file and os.path.exists(universe_file)):
             self.__pipeline__.connect()
             if(not self.__pipeline__.__client__[Pipeline.__database__]['meta_{}'.format(name)].find_one({'sha1':sha1_file(universe_file)})):
-                print('UPLOADING UNIVERSE FILE')
                 try:
-                    self.__preprocessor__.upload_universe_file(universe_file)
+                    self.__preprocessor__.upload_universe_file(universe_file, build_meta = build_meta)
                     self.__pipeline__.__client__[Pipeline.__database__]['meta_{}'.format(name)].insert_one(
                         {'sha1':sha1_file(universe_file),'source':universe_file})
                 except pymongo.errors.BulkWriteError:
@@ -139,6 +139,7 @@ class RecordMatcher():
                 if(not self.__preprocessor__.gc): self.__preprocessor__.gc = self.__preprocessor__.__downloadcount__('gramcount')
                 
                 self.__preprocessor__.__buildmetadata__(record, self.fields, self.__preprocessor__.wc, self.__preprocessor__.gc)
+            assert '_meta' in record
             return self.__fuzzymatch__(record)
 
     def __getfilteredLSH__(self, record):
@@ -156,8 +157,11 @@ class RecordMatcher():
             return self.LSH[h]
 
     def __fuzzymatch__(self,record):
+        if('_meta' not in record.keys()):
+            self.__preprocessor__.__buildmetadata__(record, self.fields, self.__preprocessor__.wc, self.__preprocessor__.gc)
+        
         i = self.__getfilteredLSH__(record).match(record)
-
+        
         best_match = next(i)
         best_match[1]['MATCH_RATE'] = best_match[0]       
 
@@ -167,12 +171,13 @@ class RecordMatcher():
 
         return best_match[1]
 
-    def match_file(self, target_file, outfile = None, name_remappings = {}, delim='\t', worker_count = cpu_count()):
+    def match_file(self, target_file, outfile = None, name_remappings = {},
+                   build_meta = False, delim='\t', worker_count = cpu_count()):
         outfile = outfile or '{}{}'.format(os.path.join(os.path.split(target_file)[0],
                                                         os.path.basename(target_file).split(os.path.extsep)[0]),
                                                         os.path.extsep.join(['_OUT','txt']))
         
-        self.__preprocessor__.upload_target_file(target_file, delim=delim, name_remappings=name_remappings)
+        self.__preprocessor__.upload_target_file(target_file, build_meta = build_meta, delim=delim, name_remappings=name_remappings)
 
         workers = []
         def spawn_worker():

@@ -73,8 +73,8 @@ class RecordLSH():
 
         self.wc = None
         self.gc = None
-
-
+        self.pp = None
+            
         if(not field_weights):
             field_weights = dict(zip(fields, [1]*len(fields)))
         self.field_weights = field_weights
@@ -149,6 +149,19 @@ class RecordLSH():
         def get_meta(rec):
             try: return rec['_meta'][field]
             except KeyError:
+
+                if(not self.pp):
+                    self.pp = PreprocessPiper(self.p)
+                if(not self.pp.wc):
+                    self.pp.wc = self.pp.__downloadcount__('wordcount')
+                if(not self.pp.gc):
+                    self.pp.gc = self.pp.__downloadcount__('gramcount')
+
+                self.pp.__buildmetadata__(rec, self.fields, self.pp.wc, self.pp.gc)
+
+                return rec['_meta'][field]
+                print('_meta' in r0)
+                print('_meta' in r1)
                 raise Exception()
                 pass
 

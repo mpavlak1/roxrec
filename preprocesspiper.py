@@ -27,7 +27,7 @@ class PreprocessPiper():
         self.wc = None #word count, will either be generated from universe or pulled from DB
         self.gc = None #gram count, will either be generated from universe or pulled from DB
 
-    def __readuniversefile__(self, filepath, delim = '\t'):
+    def __readuniversefile__(self, filepath, build_meta = False, delim = '\t'):
         '''Read universe file and build wordcount and gramcount dictionaries in place from each line in file'''
         clean = self.p.clean #define clean on local score to avoid multiple lookups on self.p.cleans
         hashrec = self.p.hashrec
@@ -74,59 +74,49 @@ class PreprocessPiper():
 
                             try: words[word][gram]['count'] += 1
                             except KeyError: words[word][gram] = {'count' : 1}
-                    try: meta_field[key][field_val] = words
-                    except KeyError: meta_field[key] = {field_val : words}              
+                    if(build_meta):
+                        try: meta_field[key][field_val] = words
+                        except KeyError: meta_field[key] = {field_val : words}              
 
                 rec['_id'] = _hash
-                rec['_meta'] = meta_field
+                if(build_meta):
+                    rec['_meta'] = meta_field
 
                 recs.append(rec)
                 rec_count +=1
+           
+            if(build_meta):
+                print("BUILDING META")
+                rec_count = 0
+                for i in range(len(recs)):
+                   
+                    for key in rec:
+                        if(key[0] == '_'): continue
 
-##                if(rec_count > 100000):
-##                    print('MANUAL GARBAGE COLLECTION CALLED')
-##                    gc.collect()
-##                    rec_count = 0
-                
-
-##            print('DONE READLING LINES ({})'.format(len(recs)))
-
-            rec_count = 0
-            
-            for i in range(len(recs)):
-
-##                if(rec_count > 100000):
-##                    print('MANUAL GARBAGE COLLECTION CALLED')
-##                    gc.collect()
-##                    rec_count = 0
-                
-                for key in rec:
-                    if(key[0] == '_'): continue
-
-                    try:
-                        field_val = recs[i][key]
-                    except Exception:
-                        print(key)
-                        print(recs[i].keys())
-                        print(recs[i])
-                        
-                        raise
-                                        
-                    for word in field_val.split():
-                        
-                        recs[i]['_meta'][key][field_val][word]['freq'] = word_count[key][word]/len(word_count[key])
-
-                        #((len(word_count[key])/word_count[key][word])/recs[i]['_meta'][key][field_val][word]['count'])/len(word_count[key])
-
-                        for gram in recs[i]['_meta'][key][field_val][word]:
-                            if(len(gram) != 3): continue
-
-                            L = len(gram_count[key])
-                            g = gram_count[key][gram]
-                            #s = recs[i]['_meta'][key][field_val][word][gram]['count']
+                        try:
+                            field_val = recs[i][key]
+                        except Exception:
+                            print(key)
+                            print(recs[i].keys())
+                            print(recs[i])
                             
-                            recs[i]['_meta'][key][field_val][word][gram]['freq'] = g/L
-                rec_count += 1
+                            raise
+                                            
+                        for word in field_val.split():
+                            
+                            recs[i]['_meta'][key][field_val][word]['freq'] = word_count[key][word]/len(word_count[key])
+
+                            #((len(word_count[key])/word_count[key][word])/recs[i]['_meta'][key][field_val][word]['count'])/len(word_count[key])
+
+                            for gram in recs[i]['_meta'][key][field_val][word]:
+                                if(len(gram) != 3): continue
+
+                                L = len(gram_count[key])
+                                g = gram_count[key][gram]
+                                #s = recs[i]['_meta'][key][field_val][word][gram]['count']
+                                
+                                recs[i]['_meta'][key][field_val][word][gram]['freq'] = g/L
+                    rec_count += 1
 
         self.__update_count__(word_count, 'wordcount')
         self.__update_count__(gram_count, 'gramcount')
@@ -172,7 +162,7 @@ class PreprocessPiper():
                         meta[field][field_val][word][gram] = {'count':1, 'freq':gram_count/global_gc_len}
         record['_meta'] = meta
 
-    def __readtargetfile__(self, filepath, delim='\t', name_remappings = {}):
+    def __readtargetfile__(self, filepath, build_meta = False, delim='\t', name_remappings = {}):
         clean = self.p.clean
         hashrec = self.p.hashrec
 
@@ -200,27 +190,24 @@ class PreprocessPiper():
                 _hash = hashrec(rec)
                 if(_hash in rec_hashes): continue
                 rec['_id'] = _hash
-                self.__buildmetadata__(rec, fields, self.wc, self.gc)
-                
+
+                if(build_meta):
+                    self.__buildmetadata__(rec, fields, self.wc, self.gc)
                 recs.append(rec)
         
         return recs
 
-    def upload_target_file(self, filepath, delim='\t', name_remappings = {}):
-        recs = self.__readtargetfile__(filepath, delim=delim, name_remappings = name_remappings)
+    def upload_target_file(self, filepath, build_meta = False, delim='\t', name_remappings = {}):
+        recs = self.__readtargetfile__(filepath, build_meta = build_meta, delim=delim, name_remappings = name_remappings)
 
         tbl_name = '{}_target'.format(self.p.table)
-    
-        #self.p.client()[self.p.database][tbl_name].drop()
-##        print('UPLOADING {} TARGET RECORDS'.format(len(recs)))
         if(len(recs) > 0):
             try:
                 self.p.client()[self.p.database][tbl_name].insert_many(recs, ordered=False)
             except pymongo.errors.BulkWriteError: pass
      
-    def upload_universe_file(self, filepath):
-        recs = self.__readuniversefile__(filepath)#[x for x in self.__readfile__(filepath)]
-##        print('UPLOADING {} RECORDS'.format(len(recs)))
+    def upload_universe_file(self, filepath, build_meta = False):
+        recs = self.__readuniversefile__(filepath, build_meta = build_meta)
         self.p.client()[self.p.database][self.p.table].insert_many(recs, ordered=False)
 
     def __update_count__(self, additional_counts, count_type):
