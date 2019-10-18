@@ -39,8 +39,7 @@ def cosine_sim(v0, v1):
     try:
         return v0v1/(sqrt(v0v0)*sqrt(v1v1))
     except ZeroDivisionError:
-        print(v0, v1)
-        raise
+        return 0
 
 ## Hashing functions
 def hashstring(s):

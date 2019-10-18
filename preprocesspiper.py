@@ -19,6 +19,8 @@ import __init__
 from general import *
 from pipeline import Pipeline
 
+## Additional Packages
+import pymongo
 
 class PreprocessPiper():   
 
@@ -42,7 +44,10 @@ class PreprocessPiper():
             rec_count = 0
             rec_hashes = set()
 
+            print(header)
+
             for line in r.readlines():
+                
                 cline = clean(line).split(delim)
                 cline = cline + ['']*(len(header)-len(cline))
                 rec = dict(zip(header,cline))
@@ -206,8 +211,8 @@ class PreprocessPiper():
                 self.p.client()[self.p.database][tbl_name].insert_many(recs, ordered=False)
             except pymongo.errors.BulkWriteError: pass
      
-    def upload_universe_file(self, filepath, build_meta = False):
-        recs = self.__readuniversefile__(filepath, build_meta = build_meta)
+    def upload_universe_file(self, filepath, build_meta = False, delim='\t'):
+        recs = self.__readuniversefile__(filepath, build_meta = build_meta,delim='\t')
         self.p.client()[self.p.database][self.p.table].insert_many(recs, ordered=False)
 
     def __update_count__(self, additional_counts, count_type):

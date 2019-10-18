@@ -23,6 +23,7 @@
 import os
 import sys
 import subprocess
+import threading
 
 import time
 
@@ -42,7 +43,7 @@ from concurrent.futures import ThreadPoolExecutor
 class RecordMatcher():
 
     def __init__(self, name, fields, universe_file = None, field_rename_map = {},
-                 build_meta = False, fuzzy_thresh = 0.75, field_weights = None, exact = []):
+                 build_meta = False, fuzzy_thresh = 0.75, field_weights = None, exact = [],udelim='\t'):
 
         self.name = name
         
@@ -64,7 +65,7 @@ class RecordMatcher():
             self.__pipeline__.connect()
             if(not self.__pipeline__.__client__[Pipeline.__database__]['meta_{}'.format(name)].find_one({'sha1':sha1_file(universe_file)})):
                 try:
-                    self.__preprocessor__.upload_universe_file(universe_file, build_meta = build_meta)
+                    self.__preprocessor__.upload_universe_file(universe_file, build_meta = build_meta, delim=udelim)
                     self.__pipeline__.__client__[Pipeline.__database__]['meta_{}'.format(name)].insert_one(
                         {'sha1':sha1_file(universe_file),'source':universe_file})
                 except pymongo.errors.BulkWriteError:
@@ -80,6 +81,8 @@ class RecordMatcher():
                     obj = exit_status[0], code = exit_status[1]))
         
     def __getfilters__(self, max_domain_size = 100, min_domain_size = 2):
+
+    
         
         db = self.__pipeline__.client()[Pipeline.__database__][self.__pipeline__.table]
         def _get(e = self.exact):
@@ -88,13 +91,15 @@ class RecordMatcher():
 
         exact = list(self.exact)
         counts = list(map(lambda x: [x, len(db.distinct(x))], exact))
-       
+      
         for _ in range(len(self.exact)):
             filters = _get(exact)
+
             if(len(filters) > max_domain_size):
                 exact.remove(max(counts, key = lambda x: x[1])[0])
             else:
                 return filters
+            
         raise Exception('To many filters')
      
         
@@ -210,7 +215,8 @@ class RecordMatcher():
                         w.write(line)
         
         for file in files:
-            print(file)
+            pass
+            #print(file)
             #try: os.remove(os.path.join(os.environ['TEMP'], file))
             #except FileNotFoundError: continue
 
@@ -235,20 +241,30 @@ class RecordMatcher():
             try: del rec_match['_meta']
             except KeyError: pass
         
-
-            m.append({'init':rec, 'match': rec_match})  
+            if(rec_match != {}):
+                m.append({'init':rec, 'match': rec_match})  
             rec = self.__pipeline__.__client__[Pipeline.__database__]['{}_target'.format(self.name)].find_one_and_delete({})
 
         with open(out,mode='w',encoding='UTF-8',errors='ignore') as w:
-       
-            w.write('{}\t===\t{}\t@@@\t{}\n'.format('\t'.join(m[0]['init'].keys()),
-                                                     '\t'.join(filter(lambda x: x!='MATCH_RATE', m[0]['match'].keys())),
+
+           m0 = max(m,key=lambda x: -len(x.keys()))
+           w.write('{}\t===\t{}\t@@@\t{}\n'.format('\t'.join(m0['init'].keys()),
+                                                     '\t'.join(filter(lambda x: x!='MATCH_RATE', m0['match'].keys())),
                                                      'MATCH_RATE'))
-            
-            for match in m:
-                init = '\t'.join(map(str,match['init'].values()))
-                mrec = '\t'.join(map(lambda x: str(match['match'][x]), filter(lambda key: key!='MATCH_RATE', match['match'].keys())))
-                w.write('{}\t===\t{}\t@@@\t{}\n'.format(init, mrec, match['match']['MATCH_RATE']))
+
+       
+           
+           for match in m:
+               if(match['match'].get('MATCH_RATE',0) <= 0):
+                   continue
+               
+               init = '\t'.join(map(str,match['init'].values()))
+               mrec = '\t'.join(map(lambda x: str(match['match'][x]), filter(lambda key: key!='MATCH_RATE', match['match'].keys())))
+               try:
+                   w.write('{}\t===\t{}\t@@@\t{}\n'.format(init, mrec, match['match']['MATCH_RATE']))
+               except KeyError:
+                   #can log non-matched recs here if want
+                   continue
         
         return out
 
@@ -286,3 +302,4 @@ if(__name__ == '__main__'):
     except IndexError: pass
 
 
+#r = RecordMatcher('hosp',['NAME','ADDRESS'],universe_file=r'Q:\Data\IRS\Form990_Healthcare_Names\FORM990_HEALTHCARE_NAMES_FORMATTED.txt',field_weights={'NAME':85,'ADDRESS':15},exact=['STATE'])
