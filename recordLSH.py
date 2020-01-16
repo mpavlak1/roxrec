@@ -152,12 +152,12 @@ class RecordLSH():
 
                 if(not self.pp):
                     self.pp = PreprocessPiper(self.p)
-                if(not self.pp.wc):
-                    self.pp.wc = self.pp.__downloadcount__('wordcount')
-                if(not self.pp.gc):
-                    self.pp.gc = self.pp.__downloadcount__('gramcount')
+##                if(not self.pp.wc):
+##                    self.pp.wc = self.pp.__downloadcount__('wordcount')
+##                if(not self.pp.gc):
+##                    self.pp.gc = self.pp.__downloadcount__('gramcount')
 
-                self.pp.__buildmetadata__(rec, self.fields, self.pp.wc, self.pp.gc)
+                self.pp.__buildmetadata__(rec, self.fields)#, self.pp.wc, self.pp.gc)
 
                 return rec['_meta'][field]
                 print('_meta' in r0)
