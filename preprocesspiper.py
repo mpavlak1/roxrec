@@ -128,53 +128,58 @@ class PreprocessPiper():
         return recs
 
     
-    def __downloadcount__(self, count_name):
-        collection_name = '{table}_meta_{count_name}'.format(table=self.p.table, count_name = count_name)
-        db = self.p.client()[self.p.database][collection_name]
-       
-        count = {}
-        for key in db.distinct('field'):
-            count[key] = {}
-            for rec in db.find({'field':key}):
-                count[key][rec[count_name]] = rec['count']
+##    def __downloadcount__(self, count_name):
+##        collection_name = '{table}_meta_{count_name}'.format(table=self.p.table, count_name = count_name)
+##        db = self.p.client()[self.p.database][collection_name]
+##       
+##        count = {}
+##        for key in db.distinct('field'):
+##            count[key] = {}
+##            for rec in db.find({'field':key}):
+##                count[key][rec[count_name]] = rec['count']
         return count
 
-
-    def __buildmetadata__(self, record, fields, wc, gc):
+    def __buildmetadata__(self, record, fields):
         meta = {}
 
+        c = self.p.client()
+        _wc = c[self.p.database]['{}_meta_wordcount'.format(self.p.table)]
+        _gc = c[self.p.database]['{}_meta_gramcount'.format(self.p.table)]
+        
         for field in fields:
             try:
                 field_val = record[field]
             except KeyError: continue
             meta[field] = {field_val : {}}
 
-            global_wc_len = len(wc[field])
-            global_gc_len = len(gc[field])
+            global_wc_len = _wc.count_documents({'field':field})#len(wc[field])
+            global_gc_len = _gc.count_documents({'field':field})#len(gc[field])
 
             for word in field_val.split():
-                word_count = wc[field].get(word, 1)
+                _ = _wc.find_one({'field':field, 'wordcount':word})
+                word_count = _.get('count',1) if _ else 1
+                #word_count = wc[field].get(word, 1)
 
                 try: meta[field][field_val][word]['count'] += 1
                 except KeyError:
                     meta[field][field_val][word] = {'count':1, 'freq':word_count/global_wc_len}
 
                 for gram in self.p.get_tri_grams(word):
-                    gram_count = gc[field].get(gram,1)
+                    _ = _gc.find_one({'field':field, 'gramcount':gram})
+                    gram_count = _.get('count',1) if _ else 1
+                    #gram_count = gc[field].get(gram,1)
 
                     try: meta[field][field_val][word][gram]['count'] += 1
                     except KeyError:
                         meta[field][field_val][word][gram] = {'count':1, 'freq':gram_count/global_gc_len}
         record['_meta'] = meta
+        del c
 
     def __readtargetfile__(self, filepath, build_meta = False, delim='\t', name_remappings = {}):
         clean = self.p.clean
         hashrec = self.p.hashrec
 
         recs = []
-
-        if(not self.wc): self.wc = self.__downloadcount__('wordcount')
-        if(not self.gc): self.gc = self.__downloadcount__('gramcount')
 
         fields = self.p.client()[self.p.database][self.p.table].find_one({},{'_id':0,'_meta':0}).keys()
 
@@ -197,7 +202,7 @@ class PreprocessPiper():
                 rec['_id'] = _hash
 
                 if(build_meta):
-                    self.__buildmetadata__(rec, fields, self.wc, self.gc)
+                    self.__buildmetadata__(rec, fields)
                 recs.append(rec)
         
         return recs

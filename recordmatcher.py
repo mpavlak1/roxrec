@@ -81,8 +81,6 @@ class RecordMatcher():
                     obj = exit_status[0], code = exit_status[1]))
         
     def __getfilters__(self, max_domain_size = 100, min_domain_size = 2):
-
-    
         
         db = self.__pipeline__.client()[Pipeline.__database__][self.__pipeline__.table]
         def _get(e = self.exact):
@@ -139,11 +137,8 @@ class RecordMatcher():
             return exact_match
         else:
             if('_meta' not in record):
-            
-                if(not self.__preprocessor__.wc): self.__preprocessor__.wc = self.__preprocessor__.__downloadcount__('wordcount')
-                if(not self.__preprocessor__.gc): self.__preprocessor__.gc = self.__preprocessor__.__downloadcount__('gramcount')
                 
-                self.__preprocessor__.__buildmetadata__(record, self.fields, self.__preprocessor__.wc, self.__preprocessor__.gc)
+                self.__preprocessor__.__buildmetadata__(record, self.fields)
             assert '_meta' in record
             return self.__fuzzymatch__(record)
 
@@ -163,7 +158,7 @@ class RecordMatcher():
 
     def __fuzzymatch__(self,record):
         if('_meta' not in record.keys()):
-            self.__preprocessor__.__buildmetadata__(record, self.fields, self.__preprocessor__.wc, self.__preprocessor__.gc)
+            self.__preprocessor__.__buildmetadata__(record, self.fields)
         
         i = self.__getfilteredLSH__(record).match(record)
         
@@ -217,8 +212,8 @@ class RecordMatcher():
         for file in files:
             pass
             #print(file)
-            #try: os.remove(os.path.join(os.environ['TEMP'], file))
-            #except FileNotFoundError: continue
+            try: os.remove(os.path.join(os.environ['TEMP'], file))
+            except FileNotFoundError: continue
 
         assert all(map(lambda x: x==0, workers)), 'Some workers exited with errors'
         return outfile
@@ -247,24 +242,27 @@ class RecordMatcher():
 
         with open(out,mode='w',encoding='UTF-8',errors='ignore') as w:
 
-           m0 = max(m,key=lambda x: -len(x.keys()))
-           w.write('{}\t===\t{}\t@@@\t{}\n'.format('\t'.join(m0['init'].keys()),
-                                                     '\t'.join(filter(lambda x: x!='MATCH_RATE', m0['match'].keys())),
-                                                     'MATCH_RATE'))
+            try:
+               m0 = max(m,key=lambda x: -len(x.keys()))
+               w.write('{}\t===\t{}\t@@@\t{}\n'.format('\t'.join(m0['init'].keys()),
+                                                         '\t'.join(filter(lambda x: x!='MATCH_RATE', m0['match'].keys())),
+                                                         'MATCH_RATE'))
 
-       
            
-           for match in m:
-               if(match['match'].get('MATCH_RATE',0) <= 0):
-                   continue
                
-               init = '\t'.join(map(str,match['init'].values()))
-               mrec = '\t'.join(map(lambda x: str(match['match'][x]), filter(lambda key: key!='MATCH_RATE', match['match'].keys())))
-               try:
-                   w.write('{}\t===\t{}\t@@@\t{}\n'.format(init, mrec, match['match']['MATCH_RATE']))
-               except KeyError:
-                   #can log non-matched recs here if want
-                   continue
+               for match in m:
+                   if(match['match'].get('MATCH_RATE',0) <= 0):
+                       continue
+                   
+                   init = '\t'.join(map(str,match['init'].values()))
+                   mrec = '\t'.join(map(lambda x: str(match['match'][x]), filter(lambda key: key!='MATCH_RATE', match['match'].keys())))
+                   try:
+                       w.write('{}\t===\t{}\t@@@\t{}\n'.format(init, mrec, match['match']['MATCH_RATE']))
+                   except KeyError:
+                       #can log non-matched recs here if want
+                       continue
+            #When no matches found, do nothing
+            except ValueError: pass
         
         return out
 
@@ -281,6 +279,7 @@ info = subprocess.STARTUPINFO()
 info.dwFlags = subprocess.STARTF_USESHOWWINDOW
 info.wShowWindow = SW_MINIMIZE
 
+# Can change to windowless when done debugging
 def child_process(args):
     return subprocess.call(['python',__file__, args],
                            startupinfo = info, creationflags = BELOW_NORMAL_PRIORITY_CLASS)
@@ -299,7 +298,49 @@ if(__name__ == '__main__'):
             r = eval(arg)
             r.__proceesstargets__()
             sys.exit(0)
-    except IndexError: pass
+    except IndexError:
+        pass
 
 
+## Example Usage
+'''
 #r = RecordMatcher('hosp',['NAME','ADDRESS'],universe_file=r'Q:\Data\IRS\Form990_Healthcare_Names\FORM990_HEALTHCARE_NAMES_FORMATTED.txt',field_weights={'NAME':85,'ADDRESS':15},exact=['STATE'])
+
+u0 = r'Q:\Projects\Hospitals\FORM990EZ_HEALTHCARE_NAMES_TSV.txt'
+t0 = r'Q:\Projects\Hospitals\Pregnancy Help Center List_TSV.txt'
+
+r = RecordMatcher('hosp_ez',fields=['NAME','ADDRESS'],universe_file=None, field_weights={'NAME':95,'ADDRESS':5},exact=['STATE'])
+r.match_file(t0,'C:/Users/michael.pavlak/Desktop/f990ez_matched.txt',worker_count=2)
+'''
+
+## Starting up database
+
+PATHTOMONGODB = r'C:\Users\Public\MongoDB\bin\mongod.exe'
+DATABASEPATH = 'C:/Users/michael.pavlak/Desktop/data'
+'''
+import subprocess
+assert os.path.exists(PATHTOMONGODB)
+subprocess.Popen([PATHTOMONGODB, '--dbpath', DATABASEPATH])
+'''
+
+## Cleaning up old runs
+from pymongo import MongoClient
+client = None
+def connect(host='localhost',port = 27017):
+    global client
+    if(not client):
+        client = MongoClient('mongodb://{}:{}'.format(host,port))
+
+def wiperun(runname):
+    if(not client): connect()
+    for name in client.temp.list_collection_names():
+        for partial in name.split('_'):
+            if(partial==runname):
+                client.temp.drop_collection(name)
+'''
+connect()
+db = client.temp
+for name in db.list_collection_names():
+    db.drop_collection(name)
+'''
+
